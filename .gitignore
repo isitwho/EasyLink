@@ -1,0 +1,21 @@
+# .gitignore
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+build/
+dist/
+*.js
+*.css
+!esbuild.config.mjs
+!hot-reload.js
+
+# Environment variables
+.env
+
+# Obsidian
+.obsidian/

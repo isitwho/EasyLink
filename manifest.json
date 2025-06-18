@@ -1,0 +1,10 @@
+{
+    "id": "obsidian-easylink",
+    "name": "EasyLink",
+    "version": "1.0.0",
+    "minAppVersion": "0.15.0",
+    "description": "Select text in your editor to find the most similar content from other notes and easily create links.",
+    "author": "isitwho",
+    "authorUrl": "https://github.com/isitwho",
+    "isDesktopOnly": false
+}
