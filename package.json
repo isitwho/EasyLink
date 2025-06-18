@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-easylink",
+  "name": "easylink",
   "version": "1.0.0",
   "description": "Select text to find similar content across your vault and create links effortlessly.",
   "main": "main.js",
