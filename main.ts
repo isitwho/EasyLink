@@ -287,8 +287,6 @@ class SimilarNotesSettingTab extends PluginSettingTab {
 		const {containerEl} = this;
 		containerEl.empty();
 
-		containerEl.createEl('h2', {text: 'EasyLink Settings'});
-
         // 1. 무시할 폴더 설정
 		new Setting(containerEl)
 			.setName('Folders to ignore')
