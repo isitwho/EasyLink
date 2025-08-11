@@ -4,8 +4,7 @@
 
 EasyLink supercharges your note-linking workflow. Instead of manually searching for related ideas, simply select a phrase, run the command, and get an instant, ranked list of the most relevant content from your entire vault, complete with rich previews.
 
-![EasyLink Demo GIF](https://your-image-host.com/easylink-v1.1-demo.gif)
-_**(Important: Replace the URL above with a link to a new GIF showing the updated features!)**_
+![EasyLink Demo GIF](https://github.com/isitwho/EasyLink/blob/main/assets/Animation.gif?raw=true)
 
 ---
 
@@ -52,5 +51,5 @@ _**(Important: Replace the URL above with a link to a new GIF showing the update
 
 If you find this plugin helpful, your support would be greatly appreciated! It helps me dedicate more time to creating and improving tools for the Obsidian community. Thank you!
 
-- [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/isitwho)
-- [![GitHub Sponsor](https://img.shields.io/badge/GitHub-Sponsor-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/isitwho)
+-   [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/isitwho)
+-   [![GitHub Sponsor](https://img.shields.io/badge/GitHub-Sponsor-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/isitwho)
