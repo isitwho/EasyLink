@@ -1,10 +1,14 @@
 {
-    "id": "easylink",
-    "name": "EasyLink",
-    "version": "1.0.1",
-    "minAppVersion": "0.15.0",
-    "description": "Select text in your editor to find the most similar content from other notes and easily create links.",
-    "author": "isitwho",
-    "authorUrl": "https://github.com/isitwho",
-    "isDesktopOnly": false
+	"id": "easylink",
+	"name": "EasyLink",
+	"version": "1.1.0",
+	"minAppVersion": "0.15.0",
+	"description": "Select text in your editor to find the most similar content from other notes and easily create links.",
+	"author": "isitwho",
+	"authorUrl": "https://github.com/isitwho",
+	"fundingUrl": {
+		"GitHub": "https://github.com/sponsors/isitwho",
+		"Buy Me a Coffee": "https://www.buymeacoffee.com/isitwho"
+	},
+	"isDesktopOnly": false
 }

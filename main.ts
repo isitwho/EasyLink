@@ -1,339 +1,698 @@
-import { App, Editor, MarkdownView, Notice, Plugin, TFile, FuzzySuggestModal, FuzzyMatch, Vault, MetadataCache, PluginSettingTab, Setting } from 'obsidian';
+import {
+	App,
+	Editor,
+	Notice,
+	Plugin,
+	TFile,
+	FuzzySuggestModal,
+	FuzzyMatch,
+	PluginSettingTab,
+	Setting,
+	MarkdownRenderer,
+	Pos,
+	normalizePath,
+} from "obsidian";
 
-const EN_STOPWORDS = new Set(['is', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', 'should', 'now']);
-const KO_STOPWORDS = new Set(['는', '을', '를', '에서', '으로', '뿐', '그리고', '그래서', '그러나', '하지만', '그런데', '등', '및', '저', '것', '때', '곳']);
+// --- 기본 설정 및 데이터 구조 ---
+const EN_STOPWORDS = new Set([
+	"i",
+	"me",
+	"my",
+	"myself",
+	"we",
+	"our",
+	"ours",
+	"he",
+	"him",
+	"his",
+	"she",
+	"her",
+	"it",
+	"its",
+	"they",
+	"them",
+	"their",
+	"what",
+	"which",
+	"who",
+	"this",
+	"that",
+	"these",
+	"those",
+	"am",
+	"is",
+	"are",
+	"was",
+	"were",
+	"be",
+	"been",
+	"a",
+	"an",
+	"the",
+	"and",
+	"but",
+	"if",
+	"or",
+	"as",
+	"of",
+	"at",
+	"by",
+	"for",
+	"with",
+	"to",
+	"from",
+	"in",
+	"out",
+	"on",
+	"off",
+]);
+const KO_STOPWORDS = new Set([
+	"이",
+	"가",
+	"은",
+	"는",
+	"을",
+	"를",
+	"의",
+	"에",
+	"에서",
+	"와",
+	"과",
+	"도",
+	"으로",
+	"로",
+	"만",
+	"뿐",
+	"그리고",
+	"그래서",
+	"그러나",
+	"하지만",
+	"그",
+	"저",
+	"것",
+	"수",
+	"때",
+	"곳",
+	"들",
+]);
+const DEFAULT_STOPWORDS = new Set([...EN_STOPWORDS, ...KO_STOPWORDS]);
 
-const STOPWORDS = new Set([...EN_STOPWORDS, ...KO_STOPWORDS]);
-
-interface SimilarNotesSettings {
+interface EasyLinkSettings {
 	foldersToIgnore: string[];
 	maxResults: number;
 	minScore: number;
+	useDefaultStopwords: boolean;
+	customStopwords: string[];
+	searchCurrentFile: boolean;
 }
 
-const DEFAULT_SETTINGS: SimilarNotesSettings = {
+const DEFAULT_SETTINGS: EasyLinkSettings = {
 	foldersToIgnore: [],
 	maxResults: 25,
-	minScore: 0.1, // 10% 유사도
-}
+	minScore: 0.1,
+	useDefaultStopwords: true,
+	customStopwords: [],
+	searchCurrentFile: false,
+};
 
-// 검색 결과를 담을 데이터 구조 정의 (score 속성 포함)
-interface SimilarContentResult {
+interface SearchResult {
 	file: TFile;
-	content: string; 
-	displayText: string;
-	type: 'heading' | 'block';
-	linkTarget: string; // 링크 생성 시 사용될 #헤딩 또는 ^블록ID
-	score: number; // 검색 결과의 유사도 점수
+	content: string;
+	score: number;
+	type: "heading" | "block";
+	linkTarget: string;
+	position?: Pos;
 }
 
-export default class SimilarNotesPlugin extends Plugin {
-    settings: SimilarNotesSettings; // 설정 변수 추가
-    private isSearching = false; // 잠금 변수 추가
+// --- 메인 플러그인 클래스 ---
+export default class EasyLinkPlugin extends Plugin {
+	settings: EasyLinkSettings;
+	private isSearching = false;
+	private combinedStopwords: Set<string>;
 
 	async onload() {
-		await this.loadSettings(); // 설정 로드 함수 호출
-
-		this.addRibbonIcon('link', 'Find similar notes', () => {
-			// 리본 아이콘 클릭 시 동작할 내용
-            const editor = this.app.workspace.activeEditor?.editor;
-            if (editor) {
-                const selectedText = editor.getSelection();
-                if (selectedText.trim() !== '') {
-                    this.findAndShowSimilarContent(selectedText, editor);
-                } else {
-                    new Notice('Please select text first to find similar notes.');
-                }
-            } else {
-                new Notice('Please open a note and select text first.');
-            }
-		});
-
+		await this.loadSettings();
+		this.updateStopwords();
+		this.addRibbonIcon("link", "EasyLink: Find similar notes", () =>
+			this.triggerSearch()
+		);
 		this.addCommand({
-			id: 'find-similar-content',
-			name: 'Find similar content for selection',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				const selectedText = editor.getSelection();
-				if (selectedText.trim() !== '') {
-					this.findAndShowSimilarContent(selectedText, editor);
-				} else {
-					new Notice('Please select text to find similar content.');
-				}
-			}
+			id: "find-similar-content",
+			name: "Find similar content for selection",
+			editorCallback: (editor) => this.triggerSearch(editor),
 		});
-
-    // --- 설정 탭 추가 ---
-		this.addSettingTab(new SimilarNotesSettingTab(this.app, this));
+		this.addSettingTab(new EasyLinkSettingTab(this.app, this));
+		this.registerEvent(
+			this.app.workspace.on("editor-menu", (menu, editor) => {
+				if (editor.getSelection()) {
+					menu.addItem((item) => {
+						item.setTitle("EasyLink: Find similar content")
+							.setIcon("link")
+							.onClick(() => this.triggerSearch(editor));
+					});
+				}
+			})
+		);
 	}
 
-	onunload() { }
-
-    // --- 설정 저장/로드 함수 추가 ---
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	triggerSearch(editor?: Editor) {
+		const activeEditor = editor || this.app.workspace.activeEditor?.editor;
+		if (activeEditor) {
+			const selectedText = activeEditor.getSelection();
+			if (selectedText.trim() !== "") {
+				this.findAndShowSimilarContent(selectedText, activeEditor);
+			} else {
+				new Notice("Please select text to find similar notes.");
+			}
+		} else {
+			new Notice("Please open a note and select text first.");
+		}
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+		this.updateStopwords();
 	}
 
-	/**
-	 * @param query 사용자가 선택한 텍스트
-	 * @param editor 링크를 삽입할 에디터 인스턴스
-	 */
+	updateStopwords() {
+		const custom = new Set(this.settings.customStopwords);
+		this.combinedStopwords = this.settings.useDefaultStopwords
+			? new Set([...DEFAULT_STOPWORDS, ...custom])
+			: custom;
+	}
 
-    async findAndShowSimilarContent(query: string, editor: Editor) {
-        if (this.isSearching) {
-            new Notice("A search is already in progress. Please wait.");
-            return;
-        }
-        this.isSearching = true;
+	async loadSettings() {
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData()
+		);
+	}
 
-        let notice: Notice | null = null;
-        const noticeTimeout = setTimeout(() => {
-            notice = new Notice(`Searching for content similar to "${query.trim()}"...`, 0);
-        }, 500);
+	async findAndShowSimilarContent(query: string, editor: Editor) {
+		if (this.isSearching) {
+			new Notice("A search is already in progress.");
+			return;
+		}
+		this.isSearching = true;
 
-        try {
-            const cleanQuery = query.trim();
-            if (cleanQuery.length < 2) {
-                new Notice("Please select at least 2 characters.");
-                return; // 여기서 return해도 finally 블록이 실행됨
-            }
+		let notice: Notice | null = null;
+		const noticeTimeout = setTimeout(() => {
+			notice = new Notice(
+				`EasyLink: Searching for "${query.trim()}"...`,
+				0
+			);
+		}, 500);
 
-            const queryWords = new Set(
-                cleanQuery.toLowerCase().split(/\s+/)
-                    .filter(word => word.length > 0 && !STOPWORDS.has(word))
-            );
+		try {
+			const cleanQuery = query.trim();
+			if (cleanQuery.length < 1) {
+				new Notice("Please select at least 1 character.");
+				return;
+			}
 
-            if (queryWords.size === 0) {
-                new Notice("Query contains only common words. Please try a more specific query.");
-                return;
-            }
+			const queryWords = new Set(
+				cleanQuery
+					.toLowerCase()
+					.split(/\s+/)
+					.filter(
+						(word) =>
+							word.length > 0 && !this.combinedStopwords.has(word)
+					)
+			);
 
-            const allFiles = this.app.vault.getMarkdownFiles();
-            const searchResults: SimilarContentResult[] = [];
-            const currentFile = this.app.workspace.getActiveFile();
-            const foldersToIgnore = new Set(this.settings.foldersToIgnore);
+			if (queryWords.size === 0 && cleanQuery.length > 0) {
+				new Notice(
+					"Query contains only common words. Please try a more specific query."
+				);
+				return;
+			}
 
-            for (const file of allFiles) {
-                if (currentFile && file.path === currentFile.path) continue;
-                if (foldersToIgnore.size > 0 && Array.from(foldersToIgnore).some(folder => file.path.startsWith(folder))) continue;
+			// 한 단어 검색 시 queryWords가 비어있더라도, 원본 쿼리를 기반으로 검색을 시도하도록 허용
+			const searchTerms =
+				queryWords.size > 0
+					? queryWords
+					: new Set(cleanQuery.toLowerCase().split(/\s+/));
 
-                const fileCache = this.app.metadataCache.getFileCache(file);
-                if (!fileCache) continue;
-                
-                const content = await this.app.vault.cachedRead(file);
+			const results = await this.keywordSearch(query, searchTerms);
 
-                const processContent = (text: string, type: 'heading' | 'block', linkTarget: string) => {
-                    const contentWords = new Set(
-                        text.toLowerCase().split(/\s+/).filter(word => !STOPWORDS.has(word))
-                    );
-                    let matchCount = 0;
-                    for (const queryWord of queryWords) {
-                        if (contentWords.has(queryWord)) {
-                            matchCount++;
-                        }
-                    }
-                    if (matchCount > 0) {
-                        const score = matchCount / queryWords.size;
-                        const displayText = type === 'heading' 
-                            ? `[H] ${text}` 
-                            : `[P] ${text.substring(0, 100).trim()}`;
-                        searchResults.push({ file, content: text, displayText, type, linkTarget, score });
-                    }
-                };
-                
-                if (fileCache.headings) {
-                    for (const heading of fileCache.headings) {
-                        processContent(heading.heading, 'heading', heading.heading);
-                    }
-                }
-                
-                if (fileCache.sections) {
-                    for (const section of fileCache.sections) {
-                        if (section.type === 'heading') continue;
-                        const sectionText = content.substring(section.position.start.offset, section.position.end.offset);
-                        if (sectionText.trim().length > 0) {
-                            let blockId: string | undefined = undefined;
-                            if (fileCache.blocks) {
-                                for (const id in fileCache.blocks) {
-                                    if (fileCache.blocks[id].position.start.line === section.position.start.line) {
-                                        blockId = id;
-                                        break;
-                                    }
-                                }
-                            }
-                            const linkTarget = blockId ? `^${blockId}` : sectionText.split('\n')[0];
-                            processContent(sectionText, 'block', linkTarget);
-                        }
-                    }
-                }
-            }
+			const filteredResults = results.filter(
+				(r) => r.score >= this.settings.minScore
+			);
+			if (filteredResults.length > 0) {
+				new AdvancedResultModal(
+					this.app,
+					this,
+					filteredResults,
+					editor,
+					query,
+					searchTerms
+				).open();
+			} else {
+				if (results.length > 0) {
+					new Notice(
+						"Found results, but they were below your minimum score setting."
+					);
+				} else {
+					new Notice("No similar content found.");
+				}
+			}
+		} catch (error) {
+			console.error("EasyLink Search Error:", error);
+		} finally {
+			clearTimeout(noticeTimeout);
+			if (notice) (notice as Notice).hide();
+			this.isSearching = false;
+		}
+	}
 
-            if (searchResults.length > 0) {
-                const filteredResults = searchResults.filter(result => result.score >= this.settings.minScore);
-                filteredResults.sort((a, b) => b.score - a.score);
-                const uniqueResults = filteredResults.filter((result, index, self) =>
-                    index === self.findIndex((r) => (r.file.path === result.file.path && r.content === result.content))
-                );
-                const topResults = uniqueResults.slice(0, this.settings.maxResults);
+	async keywordSearch(
+		query: string,
+		queryWords: Set<string>
+	): Promise<SearchResult[]> {
+		const searchResults: SearchResult[] = [];
+		const files = this.app.vault.getMarkdownFiles();
+		const currentFile = this.app.workspace.getActiveFile();
+		const foldersToIgnore = new Set(
+			this.settings.foldersToIgnore.map(normalizePath)
+		);
 
-                if (topResults.length > 0) {
-                    new SimilarContentModal(this.app, topResults, editor, query).open();
-                } else {
-                    new Notice('No results matched your filter settings. Try adjusting them in the plugin settings.');
-                }
-            } else {
-                new Notice('No similar content found.');
-            }
+		for (const file of files) {
+			if (
+				!this.settings.searchCurrentFile &&
+				currentFile &&
+				file.path === currentFile.path
+			)
+				continue;
+			if (
+				foldersToIgnore.size > 0 &&
+				Array.from(foldersToIgnore).some((folder) =>
+					normalizePath(file.path).startsWith(folder)
+				)
+			)
+				continue;
 
-        } catch (error) {
-            console.error("Error during similar content search:", error);
-            new Notice("An unexpected error occurred. Please check the developer console for details.");
-        } finally {
-            clearTimeout(noticeTimeout);
-            if (notice) {
-                notice.hide();
-            }
-            this.isSearching = false;
-        }
-    }
+			const fileCache = this.app.metadataCache.getFileCache(file);
+			if (!fileCache) continue;
+			const content = await this.app.vault.cachedRead(file);
+
+			const processContent = (
+				text: string,
+				type: "heading" | "block",
+				linkTarget: string,
+				originalMarkdown: string,
+				position?: Pos
+			) => {
+				const contentWords = new Set(
+					text
+						.toLowerCase()
+						.split(/\s+/)
+						.filter((word) => !this.combinedStopwords.has(word))
+				);
+				let matchCount = 0;
+				for (const queryWord of queryWords) {
+					if (contentWords.has(queryWord)) matchCount++;
+				}
+				if (matchCount > 0) {
+					const score = matchCount / queryWords.size;
+					searchResults.push({
+						file,
+						content: originalMarkdown,
+						score,
+						type,
+						linkTarget,
+						position,
+					});
+				}
+			};
+
+			if (fileCache.headings) {
+				for (const h of fileCache.headings) {
+					const markdownSource =
+						"#".repeat(h.level) + " " + h.heading;
+					processContent(
+						h.heading,
+						"heading",
+						h.heading,
+						markdownSource
+					);
+				}
+			}
+			if (fileCache.sections) {
+				for (const section of fileCache.sections) {
+					if (section.type === "heading") continue;
+					const sectionText = content.substring(
+						section.position.start.offset,
+						section.position.end.offset
+					);
+					if (sectionText.trim().length > 0) {
+						let blockId;
+						if (fileCache.blocks) {
+							for (const id in fileCache.blocks) {
+								if (
+									fileCache.blocks[id].position.end.line ===
+									section.position.end.line
+								) {
+									blockId = id;
+									break;
+								}
+							}
+						}
+
+						// 블록 ID가 있으면 linkTarget에 저장, 없으면 position을 저장
+						processContent(
+							sectionText,
+							"block",
+							blockId ? `^${blockId}` : "",
+							sectionText,
+							blockId ? undefined : section.position
+						);
+					}
+				}
+			}
+		}
+
+		searchResults.sort((a, b) => b.score - a.score);
+		const uniqueResults = searchResults.filter(
+			(result, index, self) =>
+				index ===
+				self.findIndex(
+					(r) =>
+						r.file.path === result.file.path &&
+						r.content === result.content
+				)
+		);
+		return uniqueResults.slice(0, this.settings.maxResults);
+	}
 }
 
-class SimilarContentModal extends FuzzySuggestModal<SimilarContentResult> {
+// --- 검색창 모달 ---
+
+class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 	constructor(
-		app: App, 
-		private results: SimilarContentResult[], 
+		app: App,
+		private plugin: EasyLinkPlugin,
+		private results: SearchResult[],
 		private editor: Editor,
-		private originalSelection: string
+		private originalSelection: string,
+		private queryWords: Set<string> // 하이라이팅을 위한 검색어
 	) {
 		super(app);
 	}
 
-	getItems(): SimilarContentResult[] {
+	onOpen() {
+		super.onOpen();
+		this.modalEl.addClass("easylink-preview-modal");
+
+		const hintEl = this.modalEl.createDiv({
+			cls: "easylink-shortcut-hint",
+		});
+		hintEl.innerHTML =
+			"Press <b>↵ Enter</b> to insert link, or <b>Ctrl/Cmd + ↵ Enter</b> to open in a new tab.";
+
+		this.scope.register(["Mod"], "Enter", (evt) => {
+			// @ts-ignore
+			const selectedItem = this.results[this.chooser.selectedItem];
+			if (selectedItem) {
+				this.openNoteInNewTab(selectedItem);
+				this.close();
+			}
+			return false;
+		});
+	}
+
+	getItems(): SearchResult[] {
 		return this.results;
 	}
 
-    onChooseItem(item: SimilarContentResult, evt: MouseEvent | KeyboardEvent): void {
-        const inNewTab = evt.ctrlKey || evt.metaKey;
+	getItemText(item: SearchResult): string {
+		return `${item.file.basename} ${item.content}`;
+	}
 
-        const filePath = this.app.metadataCache.fileToLinktext(item.file, '', true);
-        let linkPath = filePath;
+	renderSuggestion(match: FuzzyMatch<SearchResult>, el: HTMLElement): void {
+		el.empty();
+		el.addClass("easylink-result-item");
 
-        if (item.type === 'heading') {
-            linkPath = `${filePath}#${item.linkTarget}`;
-        } else if (item.type === 'block' && item.linkTarget.startsWith('^')) {
-            linkPath = `${filePath}#${item.linkTarget}`;
-        }
+		// 헤더
+		const headerEl = el.createDiv({ cls: "easylink-result-header" });
+		const titleEl = headerEl.createDiv({ cls: "easylink-result-title" });
+		if (match.item.file.parent && !match.item.file.parent.isRoot()) {
+			titleEl.createSpan({
+				text: match.item.file.parent.name + " / ",
+				cls: "easylink-folder-path",
+			});
+		}
+		titleEl.createSpan({
+			text: match.item.file.basename,
+			cls: "easylink-file-name",
+		});
 
-        if (inNewTab) {
-            // 새 탭에서 링크 열기
-            this.app.workspace.openLinkText(linkPath, item.file.path, true);
-            new Notice(`Opened "${item.file.basename}" in a new tab.`);
-        } else {
-            // 현재 에디터에 링크 삽입
-            const linkText = `[[${linkPath}|${this.originalSelection}]]`;
-            this.editor.replaceSelection(linkText);
-            new Notice(`Link to "${item.file.basename}" inserted.`);
-        }
-    }
-	
-    renderSuggestion(match: FuzzyMatch<SimilarContentResult>, el: HTMLElement): void {
-        el.empty();
-        el.addClass('similar-notes-result-item');
+		const scoreBadge = headerEl.createSpan({
+			text: `${(match.item.score * 100).toFixed(0)}%`,
+			cls: "easylink-result-score",
+		});
+		const score = match.item.score;
+		if (score >= 0.9) scoreBadge.addClass("score-high");
+		else if (score >= 0.7) scoreBadge.addClass("score-medium");
+		else if (score < 0.5) scoreBadge.addClass("score-low");
 
-        const contentEl = el.createDiv({ cls: 'suggestion-content' });
-        
-        contentEl.createDiv({ 
-            text: match.item.type === 'heading' ? 'H' : 'P',
-            cls: 'suggestion-type-icon' 
-        });
+		// 하이라이팅 로직
+		let contentToRender = match.item.content;
+		if (this.queryWords.size > 0) {
+			const regex = new RegExp(
+				`(${Array.from(this.queryWords).join("|")})`,
+				"gi"
+			);
+			contentToRender = contentToRender.replace(regex, "<mark>$1</mark>");
+		}
 
-        const mainText = match.item.displayText.substring(match.item.displayText.indexOf(']') + 2);
-        contentEl.createDiv({
-            text: mainText,
-            cls: 'suggestion-main-text'
-        });
+		// 내용 미리보기
+		const previewEl = el.createDiv({ cls: "easylink-result-preview" });
+		MarkdownRenderer.render(
+			this.app,
+			contentToRender,
+			previewEl,
+			match.item.file.path,
+			this.plugin
+		);
+	}
 
-        const score = match.item.score;
-        const scoreText = `${(score * 100).toFixed(0)}%`;
-        contentEl.createDiv({
-            text: scoreText,
-            cls: 'suggestion-score-badge'
-        });
+	async onChooseItem(
+		item: SearchResult,
+		evt: MouseEvent | KeyboardEvent
+	): Promise<void> {
+		if (evt.ctrlKey || evt.metaKey) {
+			await this.openNoteInNewTab(item);
+		} else {
+			await this.insertLink(item);
+		}
+	}
 
-        const auxEl = el.createDiv({ cls: 'suggestion-aux' });
-        auxEl.createEl('span', {
-            text: match.item.file.path,
-            cls: 'suggestion-file-path'
-        });
-    }
+	generateBlockId(): string {
+		return Math.random().toString(36).substring(2, 8);
+	}
 
-    getItemText(item: SimilarContentResult): string {
-        return `${item.file.basename} ${item.displayText}`;
-    }
+	async ensureAndGetBlockId(item: SearchResult): Promise<string> {
+		if (item.linkTarget && item.linkTarget.startsWith("^")) {
+			return item.linkTarget; // 이미 ID가 있으면 그대로 반환
+		}
+
+		// ID가 없으면 새로 생성
+		const newBlockId = this.generateBlockId();
+		const blockIdText = ` ^${newBlockId}`;
+
+		// 파일 끝에 공백 줄이 있는지 확인하고, 없다면 추가
+		const fileContent = await this.app.vault.read(item.file);
+		const lines = fileContent.split("\n");
+		const lastLine = lines[item.position!.end.line];
+
+		const insertPos = {
+			line: item.position!.end.line,
+			ch: lastLine.length,
+		};
+
+		const activeEditor = this.app.workspace.activeEditor?.editor;
+		if (
+			activeEditor &&
+			activeEditor.getLine(0) === lines[0] &&
+			this.app.workspace.getActiveFile()?.path === item.file.path
+		) {
+			activeEditor.replaceRange(blockIdText, insertPos);
+		} else {
+			await this.app.vault.process(item.file, (data) => {
+				const lines = data.split("\n");
+				lines[item.position!.end.line] += blockIdText;
+				return lines.join("\n");
+			});
+		}
+
+		return `^${newBlockId}`;
+	}
+
+	private async buildLinkPath(item: SearchResult): Promise<string> {
+		const filePath = this.app.metadataCache.fileToLinktext(
+			item.file,
+			"",
+			true
+		);
+		let linkTarget = item.linkTarget;
+
+		if (item.type === "block" && !linkTarget) {
+			linkTarget = await this.ensureAndGetBlockId(item);
+		}
+
+		if (linkTarget) {
+			return `${filePath}#${linkTarget}`;
+		}
+		return filePath;
+	}
+
+	async insertLink(item: SearchResult) {
+		const linkPath = await this.buildLinkPath(item);
+		const linkText = `[[${linkPath}|${this.originalSelection}]]`;
+		this.editor.replaceSelection(linkText);
+		new Notice(`Link to "${item.file.basename}" inserted.`);
+	}
+
+	async openNoteInNewTab(item: SearchResult) {
+		const linkPath = await this.buildLinkPath(item);
+		this.app.workspace.openLinkText(linkPath, item.file.path, true);
+		new Notice(`Opened "${item.file.basename}" in a new tab.`);
+	}
 }
 
-class SimilarNotesSettingTab extends PluginSettingTab {
-	plugin: SimilarNotesPlugin;
+// --- 설정 탭 ---
+class EasyLinkSettingTab extends PluginSettingTab {
+	plugin: EasyLinkPlugin;
 
-	constructor(app: App, plugin: SimilarNotesPlugin) {
+	constructor(app: App, plugin: EasyLinkPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
 	display(): void {
-		const {containerEl} = this;
+		const { containerEl } = this;
 		containerEl.empty();
 
-        // 1. 무시할 폴더 설정
-		new Setting(containerEl)
-			.setName('Folders to ignore')
-			.addTextArea(text => text
-				.setPlaceholder('Templates/\nAttachments/')
-				.setValue(this.plugin.settings.foldersToIgnore.join('\n'))
-				.onChange(async (value) => {
-					this.plugin.settings.foldersToIgnore = value.split('\n').map(p => p.trim()).filter(p => p.length > 0);
-					await this.plugin.saveSettings();
-				}));
-				
-		// 2. 최대 결과 수 설정
-		new Setting(containerEl)
-			.setName('Maximum results')
-			.addSlider(slider => slider
-				.setLimits(5, 100, 5)
-				.setValue(this.plugin.settings.maxResults)
-				.setDynamicTooltip()
-				.onChange(async (value) => {
-					this.plugin.settings.maxResults = value;
-					await this.plugin.saveSettings();
-				}));
+		new Setting(containerEl).setHeading().setName("General");
 
-        // 3. 최소 유사도 점수 설정
-        new Setting(containerEl)
-            .setName('Minimum score threshold')
-            .setDesc('Only show results with a similarity score above this value.')
-            .addExtraButton(btn => {
-                btn
-                    .setIcon('reset') // 리셋 아이콘
-                    .setTooltip('Reset to default')
-                    .onClick(async () => {
-                        this.plugin.settings.minScore = DEFAULT_SETTINGS.minScore;
-                        await this.plugin.saveSettings();
-                        
-                        this.display();
-                    });
-            })
-            .addSlider(slider => {
-                slider
-                    .setLimits(0, 100, 1) // 최소값 0%는 모든 결과를 허용함 (필터 없음)
-                    .setValue(this.plugin.settings.minScore * 100)
-                    .setDynamicTooltip()
-                    .onChange(async (value) => {
-                        this.plugin.settings.minScore = value / 100;
-                        await this.plugin.saveSettings();
-                    });
-            });
+		new Setting(containerEl)
+			.setName("Include current file in search")
+			.setDesc(
+				"If enabled, the currently active file will also be included in the search results."
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.searchCurrentFile)
+					.onChange(async (value) => {
+						this.plugin.settings.searchCurrentFile = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Folders to ignore")
+			.setDesc(
+				'Prevent search in specific folders. Enter one folder path per line (e.g., "Meta/Templates").'
+			)
+			.addTextArea((text) =>
+				text
+					.setPlaceholder("Templates/\nAttachments/")
+					.setValue(this.plugin.settings.foldersToIgnore.join("\n"))
+					.onChange(async (value) => {
+						this.plugin.settings.foldersToIgnore = value
+							.split("\n")
+							.map((p) => p.trim())
+							.filter((p) => p.length > 0);
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Maximum results")
+			.setDesc(
+				"The maximum number of results to display in the search modal."
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(5, 100, 5)
+					.setValue(this.plugin.settings.maxResults)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.maxResults = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Minimum score threshold")
+			.setDesc(
+				"Filter out results below this similarity score. A lower value will show more, less relevant results."
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 100, 1)
+					.setValue(this.plugin.settings.minScore * 100)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.minScore = value / 100;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl).setHeading().setName("Keyword Search");
+
+		new Setting(containerEl)
+			.setName("Use default stopwords")
+			.setDesc(
+				'If enabled, common words (like "the", "it", "is", "and") will be ignored during search for better relevance.'
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.useDefaultStopwords)
+					.onChange(async (value) => {
+						this.plugin.settings.useDefaultStopwords = value;
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Custom stopwords")
+			.setDesc(
+				"Add your own words to ignore during keyword search. Enter one word per line."
+			)
+			.addTextArea((text) =>
+				text
+					.setPlaceholder("project-x\ninternal-memo\netc")
+					.setValue(this.plugin.settings.customStopwords.join("\n"))
+					.onChange(async (value) => {
+						this.plugin.settings.customStopwords = value
+							.split("\n")
+							.map((p) => p.trim())
+							.filter((p) => p.length > 0);
+						await this.plugin.saveSettings();
+					})
+			);
+
+		new Setting(containerEl).setHeading().setName("Support");
+		new Setting(containerEl)
+			.setDesc(
+				"If you find EasyLink useful, please consider supporting its development!"
+			)
+			.addButton((btn) => {
+				btn.setButtonText("Sponsor on GitHub ❤️").onClick(() => {
+					window.open(
+						"https://github.com/sponsors/isitwho",
+						"_blank"
+					);
+				});
+				btn.buttonEl.addClass("easylink-github-sponsor-button");
+			})
+			.addButton((btn) => {
+				btn.setButtonText("Buy Me a Coffee ☕").onClick(() => {
+					window.open("https://buymeacoffee.com/isitwho", "_blank");
+				});
+				btn.buttonEl.addClass("easylink-bmac-button");
+			});
 	}
 }
