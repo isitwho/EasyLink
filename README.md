@@ -15,6 +15,8 @@ EasyLink supercharges your note-linking workflow. Instead of manually searching 
 -   **Powerful Keyboard Workflow**: Use `Enter` to insert a link and `Ctrl/Cmd + Enter` to open the note in a new tab, all without leaving your keyboard.
 -   **Right-Click Menu**: Access EasyLink directly from the editor's context menu for an even faster workflow.
 
+---
+
 ## Core Features
 
 -   **Intelligent, Contextual Search**: Finds similar content based on shared keywords.
@@ -25,6 +27,8 @@ EasyLink supercharges your note-linking workflow. Instead of manually searching 
     -   Include the current file in search results.
     -   Adjust the maximum number of results.
     -   Set a minimum similarity score to filter out noise.
+
+---
 
 ## How to Use
 
@@ -38,6 +42,8 @@ EasyLink supercharges your note-linking workflow. Instead of manually searching 
     -   **Press `Enter`**: Inserts a perfectly formatted link (`[[Note#^blockId|Your Selected Text]]`) at your cursor's position.
     -   **Press `Ctrl + Enter`** (or `Cmd + Enter` on macOS): Opens the source note in a new tab for quick reference.
 
+---
+
 ## Installation
 
 ### From the Community Plugins Store
@@ -47,9 +53,11 @@ EasyLink supercharges your note-linking workflow. Instead of manually searching 
 3.  Click `Browse` and search for **"EasyLink"**.
 4.  Click `Install`, and then, once it's finished, click `Enable`.
 
+---
+
 ## Support
 
 If you find this plugin helpful, your support would be greatly appreciated! It helps me dedicate more time to creating and improving tools for the Obsidian community. Thank you!
 
--   [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/isitwho)
--   [![GitHub Sponsor](https://img.shields.io/badge/GitHub-Sponsor-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/isitwho)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/isitwho)
+[![GitHub Sponsor](https://img.shields.io/badge/GitHub-Sponsor-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/isitwho)
