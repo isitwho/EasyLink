@@ -1,0 +1,55 @@
+﻿node : node:internal/modules
+/package_json_reader:316
+위치 줄:1 문자:1
++ node esbuild.config.mjs pr
+oduction 2>&1 | Out-File -Fi
+lePath build_er ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~
+    + CategoryInfo          
+    : NotSpecified: (node:  
+  internal/m...json_reade   
+ r:316:String) [], Remot    
+eException
+    + FullyQualifiedErrorId 
+    : NativeCommandError
+ 
+  throw new ERR_MODULE_NOT_F
+OUND(packageName, fileURLToP
+ath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]
+: Cannot find package 'esbui
+ld' imported from C:\Users\i
+sitw\Desktop\Projects\EasyLi
+nk\esbuild.config.mjs
+    at Object.getPackageJSON
+URL (node:internal/modules/p
+ackage_json_reader:316:9)
+    at packageResolve (node:
+internal/modules/esm/resolve
+:768:81)
+    at moduleResolve (node:i
+nternal/modules/esm/resolve:
+858:18)
+    at defaultResolve (node:
+internal/modules/esm/resolve
+:990:11)
+    at #cachedDefaultResolve
+ (node:internal/modules/esm/
+loader:737:20)
+    at ModuleLoader.resolve 
+(node:internal/modules/esm/l
+oader:714:38)
+    at ModuleLoader.getModul
+eJobForImport (node:internal
+/modules/esm/loader:293:38)
+    at #link (node:internal/
+modules/esm/module_job:208:4
+9) {
+  code: 'ERR_MODULE_NOT_FOUN
+D'
+}
+
+Node.js v24.11.1

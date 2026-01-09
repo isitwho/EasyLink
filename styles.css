@@ -1,0 +1,198 @@
+/* styles.css (최종 완성본 - white-space 수정) */
+
+/* 모달의 각 결과 아이템 */
+.easylink-result-item {
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--background-modifier-border);
+    white-space: normal;
+}
+
+/* 아이템 헤더 (파일 경로/제목 + 점수) */
+.easylink-result-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.easylink-result-title {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+
+.easylink-result-title .easylink-folder-path {
+    margin-right: 4px;
+}
+
+.easylink-result-title .easylink-file-name {
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+/* 점수 텍스트 */
+.easylink-result-score {
+    font-size: 1em;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-left: 10px;
+    white-space: nowrap;
+}
+
+.easylink-result-score.score-high {
+    color: var(--color-green);
+}
+
+.easylink-result-score.score-medium {
+    color: var(--color-blue);
+}
+
+.easylink-result-score.score-low {
+    color: var(--color-red);
+}
+
+/* 내용 미리보기 */
+.easylink-result-preview {
+    background-color: var(--background-secondary);
+    border-radius: 6px;
+    padding: 8px 16px;
+    overflow-y: auto;
+    max-height: 40vh;
+    font-size: 0.95em;
+    border: 1px solid var(--background-modifier-border-hover);
+    line-height: var(--line-height-normal);
+    /* 기본 줄간격 설정 */
+}
+
+/* 하이라이트 스타일 */
+.easylink-result-preview mark {
+    background-color: var(--text-highlight-bg);
+    color: var(--text-highlight-fg);
+}
+
+/* 헤더와 문단은 테마 스타일을 잘 따르므로, 여백만 살짝 조정합니다. */
+.easylink-result-preview :is(h1, h2, h3, h4, h5, h6, p) {
+    margin-block: 0.5em;
+}
+
+/* 이제 리스트 간격이 정상적으로 동작합니다. */
+.easylink-result-preview :is(ul, ol) {
+    margin-block: 0.5em;
+    padding-inline-start: 25px;
+}
+
+.easylink-result-preview li {
+    margin-bottom: 0.3em;
+}
+
+/* 모달 하단 단축키 안내 문구 */
+.easylink-shortcut-hint {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 12px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.easylink-github-sponsor-button {
+    background-color: #ea4aaa !important;
+    color: white !important;
+    font-weight: 600 !important;
+}
+
+.easylink-github-sponsor-button:hover {
+    background-color: #d858a2 !important;
+}
+
+.easylink-bmac-button {
+    background-color: #ffdd00 !important;
+    color: #000000 !important;
+    font-weight: 600 !important;
+}
+
+.easylink-bmac-button:hover {
+    background-color: #fbcb00 !important;
+}
+
+/* New: Type Indicator (H/P) */
+.easylink-type-badge {
+    display: inline-block;
+    font-size: 0.8em;
+    font-weight: 900;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.easylink-type-badge.type-heading {
+    background-color: transparent;
+    color: var(--text-accent);
+}
+
+.easylink-type-badge.type-block {
+    background-color: transparent;
+    color: var(--text-muted);
+}
+
+/* New: Header Only Toggle */
+.easylink-toggle-container {
+    position: absolute;
+    right: 15px;
+    top: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 10;
+}
+
+.easylink-toggle-label {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    user-select: none;
+}
+
+/* Switch styling */
+.easylink-toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 32px;
+    height: 18px;
+}
+
+.easylink-toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.easylink-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--background-modifier-border);
+    transition: .4s;
+    border-radius: 18px;
+}
+
+.easylink-slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked+.easylink-slider {
+    background-color: var(--interactive-accent);
+}
+
+input:checked+.easylink-slider:before {
+    transform: translateX(14px);
+}

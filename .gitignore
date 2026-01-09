@@ -11,6 +11,7 @@ build/
 dist/
 *.js
 *.css
+!styles.css
 !esbuild.config.mjs
 !hot-reload.js
 
