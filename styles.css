@@ -135,14 +135,22 @@
 }
 
 /* New: Header Only Toggle */
+.prompt-input-container.has-toggle {
+    position: relative;
+}
+
 .easylink-toggle-container {
     position: absolute;
-    right: 15px;
-    top: 15px;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
     gap: 8px;
     z-index: 10;
+    background-color: var(--background-primary);
+    padding-left: 6px;
+    border-radius: 4px;
 }
 
 .easylink-toggle-label {

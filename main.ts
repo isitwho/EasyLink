@@ -137,9 +137,9 @@ export default class EasyLinkPlugin extends Plugin {
 			}
 
 			const queryWords = new Set(
-				cleanQuery.toLowerCase().split(/\s+/).filter(
-					(word) => word.length > 0 && !this.combinedStopwords.has(word)
-				)
+				cleanQuery.toLowerCase().split(/\s+/)
+					.map(w => w.replace(/[^\p{L}\p{N}]/gu, ""))
+					.filter(word => word.length > 0 && !this.combinedStopwords.has(word))
 			);
 
 			if (queryWords.size === 0 && cleanQuery.length > 0) {
@@ -147,7 +147,7 @@ export default class EasyLinkPlugin extends Plugin {
 				return;
 			}
 
-			const searchTerms = queryWords.size > 0 ? queryWords : new Set(cleanQuery.toLowerCase().split(/\s+/));
+			const searchTerms = queryWords;
 
 			const engine = new SearchEngine(this.app, this.settings, this.combinedStopwords);
 			const results = await engine.performSearch(query, searchTerms);
@@ -188,12 +188,12 @@ class SearchEngine {
 		const searchResults: SearchResult[] = [];
 		const files = this.app.vault.getMarkdownFiles();
 		const currentFile = this.app.workspace.getActiveFile();
-		const foldersToIgnore = new Set(this.settings.foldersToIgnore.map(normalizePath));
+		const foldersToIgnore = this.settings.foldersToIgnore.map(normalizePath);
 		const queryTermsArray = Array.from(searchTerms);
 
 		for (const file of files) {
 			if (!this.settings.searchCurrentFile && currentFile && file.path === currentFile.path) continue;
-			if (foldersToIgnore.size > 0 && Array.from(foldersToIgnore).some(f => normalizePath(file.path).startsWith(f))) continue;
+			if (foldersToIgnore.length > 0 && foldersToIgnore.some(f => normalizePath(file.path).startsWith(f))) continue;
 
 			const fileCache = this.app.metadataCache.getFileCache(file);
 			if (!fileCache) continue;
@@ -205,7 +205,11 @@ class SearchEngine {
 			};
 
 			const processContent = (text: string, type: "heading" | "block", linkTarget: string, originalMarkdown: string, position?: Pos) => {
-				const contentWords = new Set(text.toLowerCase().split(/\s+/).filter(w => !this.stopwords.has(w)));
+				const contentWords = new Set(
+					text.toLowerCase().split(/\s+/)
+						.map(w => w.replace(/[^\p{L}\p{N}]/gu, ""))
+						.filter(w => w.length > 0 && !this.stopwords.has(w))
+				);
 				let matchCount = 0;
 				for (const term of queryTermsArray) {
 					if (contentWords.has(term)) matchCount++;
@@ -249,10 +253,18 @@ class SearchEngine {
 			}
 		}
 
-		return searchResults
-			.sort((a, b) => b.score - a.score)
-			.filter((r, i, s) => i === s.findIndex(x => x.file.path === r.file.path && x.content === r.content))
-			.slice(0, this.settings.maxResults);
+		searchResults.sort((a, b) => b.score - a.score);
+		const seen = new Set<string>();
+		const unique: SearchResult[] = [];
+		for (const r of searchResults) {
+			const key = `${r.file.path}::${r.content}`;
+			if (!seen.has(key)) {
+				seen.add(key);
+				unique.push(r);
+				if (unique.length >= this.settings.maxResults) break;
+			}
+		}
+		return unique;
 	}
 }
 
@@ -265,7 +277,7 @@ class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 	constructor(
 		app: App,
 		private plugin: EasyLinkPlugin,
-		private results: SearchResult[],
+		results: SearchResult[],
 		private editor: Editor,
 		private originalSelection: string,
 		private queryWords: Set<string>
@@ -304,7 +316,7 @@ class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 
 		this.scope.register(["Mod"], "Enter", () => {
 			// @ts-ignore
-			const item = this.results[this.chooser.selectedItem];
+			const item = this.getItems()[this.chooser.selectedItem];
 			if (item) { this.openNoteInNewTab(item); this.close(); }
 			return false;
 		});
