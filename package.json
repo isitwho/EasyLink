@@ -1,6 +1,6 @@
 {
 	"name": "easylink",
-	"version": "1.2.1",
+	"version": "1.2.2",
 	"description": "Select text to find similar content across your vault and create links effortlessly.",
 	"main": "main.js",
 	"scripts": {

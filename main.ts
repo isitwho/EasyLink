@@ -22,6 +22,10 @@ const KO_STOPWORDS = new Set([
 ]);
 const DEFAULT_STOPWORDS = new Set([...EN_STOPWORDS, ...KO_STOPWORDS]);
 
+function tokenize(text: string): string[] {
+	return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+
 interface EasyLinkSettings {
 	foldersToIgnore: string[];
 	maxResults: number;
@@ -100,7 +104,7 @@ export default class EasyLinkPlugin extends Plugin {
 	}
 
 	updateStopwords() {
-		const custom = new Set(this.settings.customStopwords.map(w => w.toLowerCase()));
+		const custom = new Set(this.settings.customStopwords.flatMap(tokenize));
 		this.combinedStopwords = this.settings.useDefaultStopwords
 			? new Set([...DEFAULT_STOPWORDS, ...custom])
 			: custom;
@@ -137,9 +141,7 @@ export default class EasyLinkPlugin extends Plugin {
 			}
 
 			const queryWords = new Set(
-				cleanQuery.toLowerCase().split(/\s+/)
-					.map(w => w.replace(/[^\p{L}\p{N}]/gu, ""))
-					.filter(word => word.length > 0 && !this.combinedStopwords.has(word))
+				tokenize(cleanQuery).filter(word => !this.combinedStopwords.has(word))
 			);
 
 			if (queryWords.size === 0 && cleanQuery.length > 0) {
@@ -150,7 +152,7 @@ export default class EasyLinkPlugin extends Plugin {
 			const searchTerms = queryWords;
 
 			const engine = new SearchEngine(this.app, this.settings, this.combinedStopwords);
-			const results = await engine.performSearch(query, searchTerms);
+			const results = await engine.performSearch(searchTerms);
 
 			const filteredResults = results.filter((r) => r.score >= this.settings.minScore);
 
@@ -184,7 +186,7 @@ export default class EasyLinkPlugin extends Plugin {
 class SearchEngine {
 	constructor(private app: App, private settings: EasyLinkSettings, private stopwords: Set<string>) { }
 
-	async performSearch(query: string, searchTerms: Set<string>): Promise<SearchResult[]> {
+	async performSearch(searchTerms: Set<string>): Promise<SearchResult[]> {
 		const searchResults: SearchResult[] = [];
 		const files = this.app.vault.getMarkdownFiles();
 		const currentFile = this.app.workspace.getActiveFile();
@@ -193,7 +195,7 @@ class SearchEngine {
 
 		for (const file of files) {
 			if (!this.settings.searchCurrentFile && currentFile && file.path === currentFile.path) continue;
-			if (foldersToIgnore.length > 0 && foldersToIgnore.some(f => normalizePath(file.path).startsWith(f))) continue;
+			if (foldersToIgnore.some(folder => file.path.startsWith(`${folder}/`))) continue;
 
 			const fileCache = this.app.metadataCache.getFileCache(file);
 			if (!fileCache) continue;
@@ -206,9 +208,7 @@ class SearchEngine {
 
 			const processContent = (text: string, type: "heading" | "block", linkTarget: string, originalMarkdown: string, position?: Pos) => {
 				const contentWords = new Set(
-					text.toLowerCase().split(/\s+/)
-						.map(w => w.replace(/[^\p{L}\p{N}]/gu, ""))
-						.filter(w => w.length > 0 && !this.stopwords.has(w))
+					tokenize(text).filter(word => !this.stopwords.has(word))
 				);
 				let matchCount = 0;
 				for (const term of queryTermsArray) {
@@ -261,7 +261,6 @@ class SearchEngine {
 			if (!seen.has(key)) {
 				seen.add(key);
 				unique.push(r);
-				if (unique.length >= this.settings.maxResults) break;
 			}
 		}
 		return unique;
@@ -316,17 +315,18 @@ class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 
 		this.scope.register(["Mod"], "Enter", () => {
 			// @ts-ignore
-			const item = this.getItems()[this.chooser.selectedItem];
-			if (item) { this.openNoteInNewTab(item); this.close(); }
+			const selectedIndex = this.chooser.selectedItem;
+			const item = this.getSuggestions(this.inputEl.value)[selectedIndex]?.item;
+			if (item) { void this.openNoteInNewTab(item); this.close(); }
 			return false;
 		});
 	}
 
 	getItems(): SearchResult[] {
-		if (this.showHeadersOnly) {
-			return this.allResults.filter(r => r.type === "heading");
-		}
-		return this.allResults;
+		const results = this.showHeadersOnly
+			? this.allResults.filter(r => r.type === "heading")
+			: this.allResults;
+		return results.slice(0, this.plugin.settings.maxResults);
 	}
 
 	getItemText(item: SearchResult): string { return `${item.file.basename} ${item.content}`; }
@@ -370,27 +370,49 @@ class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 		else await this.insertLink(item);
 	}
 
-	private generateBlockId(): string { return Math.random().toString(36).substring(2, 8); }
+	private generateBlockId(content: string): string {
+		let id: string;
+		do {
+			id = Math.random().toString(36).substring(2, 10);
+		} while (content.includes(`^${id}`));
+		return id;
+	}
+
+	private getBlockInsertion(content: string, item: SearchResult): { offset: number; existingId?: string } {
+		const position = item.position;
+		if (!position || content.slice(position.start.offset, position.end.offset) !== item.content) {
+			throw new Error("The search result has changed. Run the search again before inserting a link.");
+		}
+		const section = item.content;
+		const lastLine = section.replace(/[\r\n]+$/, "").split("\n").pop() ?? "";
+		const existingId = lastLine.match(/\s\^([a-zA-Z0-9-]+)\s*$/)?.[1];
+		return {
+			offset: position.end.offset - (section.match(/[\r\n]+$/)?.[0].length ?? 0),
+			existingId,
+		};
+	}
 
 	private async ensureAndGetBlockId(item: SearchResult): Promise<string> {
 		if (item.linkTarget?.startsWith("^")) return item.linkTarget;
-		const newBlockId = this.generateBlockId();
-		const blockIdText = ` ^${newBlockId}`;
-		const fileContent = await this.app.vault.read(item.file);
-		const lines = fileContent.split("\n");
-		const lastLine = lines[item.position!.end.line];
-		const insertPos = { line: item.position!.end.line, ch: lastLine.length };
-
-		if (this.app.workspace.getActiveFile()?.path === item.file.path) {
-			const activeEditor = this.app.workspace.activeEditor?.editor;
-			if (activeEditor) { activeEditor.replaceRange(blockIdText, insertPos); return `^${newBlockId}`; }
+		const activeEditor = this.app.workspace.getActiveFile()?.path === item.file.path
+			? this.app.workspace.activeEditor?.editor : null;
+		if (activeEditor) {
+			const content = activeEditor.getValue();
+			const insertion = this.getBlockInsertion(content, item);
+			if (insertion.existingId) return `^${insertion.existingId}`;
+			const id = this.generateBlockId(content);
+			activeEditor.replaceRange(` ^${id}`, activeEditor.offsetToPos(insertion.offset));
+			return `^${id}`;
 		}
-		await this.app.vault.process(item.file, (data) => {
-			const dataLines = data.split("\n");
-			dataLines[item.position!.end.line] += blockIdText;
-			return dataLines.join("\n");
+		let id = "";
+		await this.app.vault.process(item.file, (content) => {
+			const insertion = this.getBlockInsertion(content, item);
+			id = insertion.existingId ?? this.generateBlockId(content);
+			return insertion.existingId
+				? content
+				: content.slice(0, insertion.offset) + ` ^${id}` + content.slice(insertion.offset);
 		});
-		return `^${newBlockId}`;
+		return `^${id}`;
 	}
 
 	private async buildLinkPath(item: SearchResult): Promise<string> {
@@ -401,14 +423,20 @@ class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 	}
 
 	async insertLink(item: SearchResult) {
-		const linkPath = await this.buildLinkPath(item);
-		this.editor.replaceSelection(`[[${linkPath}|${this.originalSelection}]]`);
-		new Notice(`Link to "${item.file.basename}" inserted.`);
+		try {
+			const linkPath = await this.buildLinkPath(item);
+			this.editor.replaceSelection(`[[${linkPath}|${this.originalSelection}]]`);
+			new Notice(`Link to "${item.file.basename}" inserted.`);
+		} catch (error) {
+			new Notice(error instanceof Error ? error.message : "Could not insert the link.");
+			console.error("EasyLink insert error:", error);
+		}
 	}
 
 	async openNoteInNewTab(item: SearchResult) {
-		const linkPath = await this.buildLinkPath(item);
-		this.app.workspace.openLinkText(linkPath, item.file.path, true);
+		const filePath = this.app.metadataCache.fileToLinktext(item.file, "", true);
+		const linkPath = item.linkTarget ? `${filePath}#${item.linkTarget}` : filePath;
+		await this.app.workspace.openLinkText(linkPath, item.file.path, true);
 		new Notice(`Opened "${item.file.basename}" in a new tab.`);
 	}
 }
