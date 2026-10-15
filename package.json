@@ -1,9 +1,10 @@
 {
 	"name": "easylink",
-	"version": "1.2.2",
+	"version": "1.2.3",
 	"description": "Select text to find similar content across your vault and create links effortlessly.",
 	"main": "main.js",
 	"scripts": {
+		"test": "node --test tests/*.test.mjs",
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
 	},

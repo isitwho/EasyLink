@@ -12,6 +12,7 @@ import {
 	Pos,
 	normalizePath,
 } from "obsidian";
+import { getSearchParagraphs, getBlockInsertion, blockIdText, SearchBlock } from "./search-blocks";
 
 // --- 기본 설정 및 데이터 구조 ---
 const EN_STOPWORDS = new Set([
@@ -48,9 +49,10 @@ interface SearchResult {
 	file: TFile;
 	content: string;
 	score: number;
-	type: "heading" | "block";
+	type: "file" | "heading" | "block";
 	linkTarget: string;
 	position?: Pos;
+	block?: SearchBlock;
 }
 
 // --- 메인 플러그인 클래스 ---
@@ -198,7 +200,6 @@ class SearchEngine {
 			if (foldersToIgnore.some(folder => file.path.startsWith(`${folder}/`))) continue;
 
 			const fileCache = this.app.metadataCache.getFileCache(file);
-			if (!fileCache) continue;
 
 			let fileContent: string | null = null;
 			const getFileContent = async () => {
@@ -206,7 +207,7 @@ class SearchEngine {
 				return fileContent;
 			};
 
-			const processContent = (text: string, type: "heading" | "block", linkTarget: string, originalMarkdown: string, position?: Pos) => {
+			const processContent = (text: string, type: SearchResult["type"], linkTarget: string, originalMarkdown: string, position?: Pos, block?: SearchBlock) => {
 				const contentWords = new Set(
 					tokenize(text).filter(word => !this.stopwords.has(word))
 				);
@@ -222,9 +223,13 @@ class SearchEngine {
 						type,
 						linkTarget,
 						position,
+						block,
 					});
 				}
 			};
+
+			processContent(file.basename, "file", "", file.basename);
+			if (!fileCache) continue;
 
 			if (fileCache.headings) {
 				for (const h of fileCache.headings) {
@@ -234,21 +239,20 @@ class SearchEngine {
 
 			if (fileCache.sections) {
 				const content = await getFileContent();
-				for (const section of fileCache.sections) {
-					if (section.type === "heading") continue;
-					const sectionText = content.substring(section.position.start.offset, section.position.end.offset);
-					if (sectionText.trim().length > 0) {
-						let blockId: string | undefined;
-						if (fileCache.blocks) {
-							for (const id in fileCache.blocks) {
-								if (fileCache.blocks[id].position.end.line === section.position.end.line) {
-									blockId = id;
-									break;
-								}
-							}
+				for (const paragraph of getSearchParagraphs(content, fileCache)) {
+					// Score the whole paragraph, but link to its best matching native block.
+					// Equal matches keep source order so the target is deterministic.
+					let target = paragraph.targets[0];
+					let bestMatchCount = -1;
+					for (const candidate of paragraph.targets) {
+						const words = new Set(tokenize(candidate.content));
+						const matchCount = queryTermsArray.filter(term => words.has(term)).length;
+						if (matchCount > bestMatchCount) {
+							target = candidate;
+							bestMatchCount = matchCount;
 						}
-						processContent(sectionText, "block", blockId ? `^${blockId}` : "", sectionText, blockId ? undefined : section.position);
 					}
+					processContent(paragraph.content, "block", target.id ? `^${target.id}` : "", paragraph.content, paragraph.position, target);
 				}
 			}
 		}
@@ -257,7 +261,7 @@ class SearchEngine {
 		const seen = new Set<string>();
 		const unique: SearchResult[] = [];
 		for (const r of searchResults) {
-			const key = `${r.file.path}::${r.content}`;
+			const key = `${r.file.path}::${r.type}::${r.position?.start.offset ?? r.linkTarget}`;
 			if (!seen.has(key)) {
 				seen.add(key);
 				unique.push(r);
@@ -340,7 +344,7 @@ class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 
 		// H/P 타입 배지 추가
 		const badge = titleEl.createSpan({ cls: "easylink-type-badge" });
-		let badgeText = "P";
+		let badgeText = match.item.type === "file" ? "File" : "P";
 		if (match.item.type === "heading") {
 			const levelMatch = match.item.content.match(/^(#+)\s/);
 			badgeText = levelMatch ? `H${levelMatch[1].length}` : "H";
@@ -379,17 +383,10 @@ class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 	}
 
 	private getBlockInsertion(content: string, item: SearchResult): { offset: number; existingId?: string } {
-		const position = item.position;
-		if (!position || content.slice(position.start.offset, position.end.offset) !== item.content) {
+		if (!item.block) {
 			throw new Error("The search result has changed. Run the search again before inserting a link.");
 		}
-		const section = item.content;
-		const lastLine = section.replace(/[\r\n]+$/, "").split("\n").pop() ?? "";
-		const existingId = lastLine.match(/\s\^([a-zA-Z0-9-]+)\s*$/)?.[1];
-		return {
-			offset: position.end.offset - (section.match(/[\r\n]+$/)?.[0].length ?? 0),
-			existingId,
-		};
+		return getBlockInsertion(content, item.block);
 	}
 
 	private async ensureAndGetBlockId(item: SearchResult): Promise<string> {
@@ -401,7 +398,7 @@ class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 			const insertion = this.getBlockInsertion(content, item);
 			if (insertion.existingId) return `^${insertion.existingId}`;
 			const id = this.generateBlockId(content);
-			activeEditor.replaceRange(` ^${id}`, activeEditor.offsetToPos(insertion.offset));
+			activeEditor.replaceRange(blockIdText(content, id, item.block?.standaloneId ?? false), activeEditor.offsetToPos(insertion.offset));
 			return `^${id}`;
 		}
 		let id = "";
@@ -410,7 +407,7 @@ class AdvancedResultModal extends FuzzySuggestModal<SearchResult> {
 			id = insertion.existingId ?? this.generateBlockId(content);
 			return insertion.existingId
 				? content
-				: content.slice(0, insertion.offset) + ` ^${id}` + content.slice(insertion.offset);
+				: content.slice(0, insertion.offset) + blockIdText(content, id, item.block?.standaloneId ?? false) + content.slice(insertion.offset);
 		});
 		return `^${id}`;
 	}
